@@ -1,0 +1,26 @@
+{
+  "behavioral": {
+    "name": "Behavioral Authentication",
+    "description": "Generate behavioral patterns-based verification questions",
+    "prompt": "Analyze this personal data for person {target_id} and generate 3 behavioral authentication questions. Use ACTUAL VALUES from the data, not placeholders.\n\nDATA:\n{data_str}\n\nReturn ONLY JSON:\n[\n  {{\"question\": \"Behavioral question 1\", \"answer\": \"Specific answer with actual data values\"}},\n  {{\"question\": \"Behavioral question 2\", \"answer\": \"Specific answer with actual data values\"}},\n  {{\"question\": \"Behavioral question 3\", \"answer\": \"Specific answer with actual data values\"}}\n]\n\nIMPORTANT: Use actual values from the data, not [placeholder] text. The answers should be verifiable facts.",
+    "variables": ["target_id", "data_str"]
+  },
+  "knowledge": {
+    "name": "Knowledge-based Authentication",
+    "description": "Generate knowledge-based verification questions",
+    "prompt": "Analyze this personal data for person {target_id} and generate 3 knowledge-based authentication questions. Use ACTUAL VALUES from the data, not placeholders.\n\nDATA:\n{data_str}\n\nReturn ONLY JSON:\n[\n  {{\"question\": \"Knowledge question 1\", \"answer\": \"Specific answer with actual data values\"}},\n  {{\"question\": \"Knowledge question 2\", \"answer\": \"Specific answer with actual data values\"}},\n  {{\"question\": \"Knowledge question 3\", \"answer\": \"Specific answer with actual data values\"}}\n]\n\nCRITICAL: Extract and use real values from the data. Do not use [placeholder] format. Answers must contain specific facts that can be verified.",
+    "variables": ["target_id", "data_str"]
+  },
+  "multifactor": {
+    "name": "Multi-factor Authentication",
+    "description": "Generate multi-factor verification questions",
+    "prompt": "Analyze this personal data for person {target_id} and generate 3 multi-factor authentication questions. Use ACTUAL VALUES from the data, not placeholders.\n\nDATA:\n{data_str}\n\nReturn ONLY JSON:\n[\n  {{\"question\": \"Multi-factor question 1\", \"answer\": \"Specific answer with actual data values\"}},\n  {{\"question\": \"Multi-factor question 2\", \"answer\": \"Specific answer with actual data values\"}},\n  {{\"question\": \"Multi-factor question 3\", \"answer\": \"Specific answer with actual data values\"}}\n]\n\nIMPORTANT: Use real data values from the CSV. No [bracketed placeholders]. Answers should combine behavioral patterns and specific facts.",
+    "variables": ["target_id", "data_str"]
+  },
+  "security": {
+    "name": "Security-focused Authentication",
+    "description": "Generate security-focused verification questions",
+    "prompt": "Analyze this personal data for person {target_id} and generate 3 security-focused authentication questions. Use ACTUAL VALUES from the data, not placeholders.\n\nDATA:\n{data_str}\n\nReturn ONLY JSON:\n[\n  {{\"question\": \"Security question 1\", \"answer\": \"Specific answer with actual data values\"}},\n  {{\"question\": \"Security question 2\", \"answer\": \"Specific answer with actual data values\"}},\n  {{\"question\": \"Security question 3\", \"answer\": \"Specific answer with actual data values\"}}\n]\n\nCRITICAL: Extract real values from the data. Avoid [placeholder] format. Focus on security patterns and verifiable facts.",
+    "variables": ["target_id", "data_str"]
+  }
+}
