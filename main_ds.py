@@ -14,6 +14,7 @@ from typing import List, Optional, Dict, Any
 import boto3
 from io import BytesIO
 import yaml
+from datetime import datetime
 
 # --- Enhanced Configuration ---
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
@@ -52,10 +53,6 @@ class QAPair(BaseModel):
     question: str
     answer: str
 
-class ReportResponse(BaseModel):
-    report_id: int
-    llm_model: str
-    results: List[QAPair]
 
 class FileInfo(BaseModel):
     name: str
@@ -68,6 +65,23 @@ class ConfigInput(BaseModel):
     join_order: List[str]
     output_config_path: str
     filter_column: str  # Dynamic filter column
+
+class QueryLog(BaseModel):
+    prompt_type: str
+    target_id: int
+    prompt_used: str
+    llm_response: str
+    llm_model: str
+    success: bool
+    timestamp: str
+
+class ReportResponse(BaseModel):
+    report_id: int
+    llm_model: str
+    results: List[QAPair]
+    llm_generation_success: bool = True
+    query_log: Optional[QueryLog] = None  # Add this field
+    
 
 # --- AI Module Request Models ---
 class SQLRequest(BaseModel):
@@ -254,55 +268,131 @@ Return structured JSON with these sections."""
 # --- Authentication Prompt Templates ---
 
 AUTHENTICATION_PROMPTS = {
-    "behavioral": """As a verification agent, generate 3 natural, conversational questions to verify {target_id}'s identity based on behavioral patterns.
+    "behavioral": """As a bank verification agent, analyze this customer data for {target_id} and generate exactly 3 natural, conversational behavioral verification questions that sound like what a real bank agent would ask during a phone call.
 
 DATA:
 {data_str}
 
-Return ONLY JSON:
-[
-  {{"question": "I'm seeing some transaction patterns here - could you describe what a typical spending day looks like for you?", "answer": "Based on your activity, a typical day involves [pattern details]"}},
-  {{"question": "When do you usually find yourself making most of your purchases throughout the week?", "answer": "Your data shows peak activity during [timeframes] with [specific patterns]"}},
-  {{"question": "Help me understand your recent account behavior - has anything changed in your spending habits lately?", "answer": "Your recent activity indicates [changes/consistency] compared to previous patterns"}}
-]""",
+CRITICAL REQUIREMENTS:
+- Questions must be natural and conversational, not robotic
+- Answers must contain SPECIFIC factual information extracted from the actual data
+- Use ACTUAL VALUES from the data, not placeholders like [pattern details]
+- Focus on spending patterns, transaction habits, and behavioral trends
+- Make questions sound like genuine verification questions
 
-    "knowledge": """As a verification agent, generate 3 natural questions to verify {target_id}'s knowledge of their account activity.
+Return ONLY valid JSON array with exactly 3 question-answer pairs:
+[
+  {{
+    "question": "Natural behavioral question about spending patterns",
+    "answer": "Specific factual answer using real values from the data"
+  }},
+  {{
+    "question": "Another natural behavioral question about transaction habits",
+    "answer": "Another specific answer with actual data values"
+  }},
+  {{
+    "question": "Final behavioral verification question",
+    "answer": "Final specific answer with real behavioral data"
+  }}
+]
+
+IMPORTANT: Extract and use real behavioral patterns from the data. Do not use [bracketed placeholders].""",
+
+    "knowledge": """As a bank verification agent, analyze this customer data for {target_id} and generate exactly 3 natural, conversational knowledge-based verification questions that sound like what a real bank agent would ask during identity verification.
 
 DATA:
 {data_str}
 
-Return ONLY JSON:
-[
-  {{"question": "Let me confirm some details - can you tell me about a recent transaction that stands out in your mind?", "answer": "Your recent notable transaction includes [specific details] from [date]"}},
-  {{"question": "I need to verify your recent activity - what was the last payment you made and to whom?", "answer": "Your last payment was to [recipient] for [amount] on [date]"}},
-  {{"question": "Looking at your account, which store or service do you use most regularly?", "answer": "You most frequently use [merchant/service] with [number] recent transactions"}}
-]""",
+CRITICAL REQUIREMENTS:
+- Questions must sound like genuine bank verification questions
+- Answers must contain SPECIFIC factual information extracted from the actual data
+- Use ACTUAL VALUES from the data, not placeholders like [specific details]
+- Focus on account details, transaction history, and personal information
+- Make questions varied and cover different aspects of the account
 
-    "multifactor": """As a verification agent, generate 3 comprehensive verification questions for {target_id} combining multiple factors.
+Examples of GOOD questions:
+- "Can you verify the date of your last payment and the amount?"
+- "What's the current balance showing on your main account?"
+- "Which industry does our records show for your employment?"
+
+Return ONLY valid JSON array with exactly 3 question-answer pairs:
+[
+  {{
+    "question": "Natural knowledge question about account details",
+    "answer": "Specific factual answer using real values from the data"
+  }},
+  {{
+    "question": "Another natural knowledge question about transactions",
+    "answer": "Another specific answer with actual data values"
+  }},
+  {{
+    "question": "Final knowledge verification question",
+    "answer": "Final specific answer with real account data"
+  }}
+]
+
+IMPORTANT: Extract and use real values from the data. Do not use [bracketed placeholders].""",
+
+    "multifactor": """As a bank verification agent, analyze this customer data for {target_id} and generate exactly 3 comprehensive multi-factor verification questions that combine behavioral patterns and account knowledge.
 
 DATA:
 {data_str}
 
-Return ONLY JSON:
-[
-  {{"question": "To verify your identity, could you walk me through your usual process when you notice something unfamiliar in your account?", "answer": "Your typical response involves [steps] and you would notice [specific indicators] based on your regular patterns"}},
-  {{"question": "I'd like to understand your security habits - what do you typically do when accessing your account from a new location?", "answer": "Your security protocol includes [behaviors] and you usually [specific actions] for new device access"}},
-  {{"question": "Let's talk about your transaction patterns - how do you usually verify larger purchases before completing them?", "answer": "Your verification process typically involves [methods] and you check for [specific details] based on your spending history"}}
-]""",
+CRITICAL REQUIREMENTS:
+- Questions must combine behavioral patterns and specific account knowledge
+- Answers must contain SPECIFIC factual information extracted from the actual data
+- Use ACTUAL VALUES from the data, not placeholders like [specific steps]
+- Questions should verify identity through multiple verification factors
+- Make questions sound like comprehensive security verification
 
-    "security": """As a security agent, generate 3 security verification questions for {target_id}.
+Return ONLY valid JSON array with exactly 3 question-answer pairs:
+[
+  {{
+    "question": "Multi-factor question combining behavior and knowledge",
+    "answer": "Specific factual answer using real values from the data"
+  }},
+  {{
+    "question": "Another multi-factor verification question",
+    "answer": "Another specific answer with actual data values"
+  }},
+  {{
+    "question": "Final multi-factor security question",
+    "answer": "Final specific answer with real verification data"
+  }}
+]
+
+IMPORTANT: Extract and use real patterns and values from the data. Do not use [bracketed placeholders].""",
+
+    "security": """As a bank security specialist, analyze this customer data for {target_id} and generate exactly 3 security-focused verification questions that sound like what a security agent would ask during fraud prevention.
 
 DATA:
 {data_str}
 
-Return ONLY JSON:
+CRITICAL REQUIREMENTS:
+- Questions must focus on security patterns and fraud prevention
+- Answers must contain SPECIFIC factual information extracted from the actual data
+- Use ACTUAL VALUES from the data, not placeholders like [specific methods]
+- Focus on transaction verification, account monitoring, and security habits
+- Make questions sound like professional security verification
+
+Return ONLY valid JSON array with exactly 3 question-answer pairs:
 [
-  {{"question": "From a security perspective, what's your usual approach to monitoring your account for suspicious activity?", "answer": "Your monitoring approach includes [methods] and you typically watch for [specific red flags]"}},
-  {{"question": "If you saw an unfamiliar transaction, what would be your immediate steps to verify it?", "answer": "Your immediate steps would include [actions] such as [specific verification methods]"}},
-  {{"question": "How do you typically distinguish between your normal activity and potentially fraudulent transactions?", "answer": "You distinguish through [indicators] like [specific patterns] that differ from your established behavior"}}
-]"""
+  {{
+    "question": "Security-focused verification question",
+    "answer": "Specific factual answer using real values from the data"
+  }},
+  {{
+    "question": "Another security verification question",
+    "answer": "Another specific answer with actual security data"
+  }},
+  {{
+    "question": "Final security confirmation question",
+    "answer": "Final specific answer with real security patterns"
+  }}
+]
+
+IMPORTANT: Extract and use real security patterns from the data. Do not use [bracketed placeholders]."""
 }
-
 # --- Enhanced Helper Functions ---
 def load_config(config_path: str) -> dict:
     """Load configuration from JSON file"""
@@ -321,14 +411,20 @@ def load_config(config_path: str) -> dict:
         return config
     except Exception as e:
         raise ValueError(f"Error loading config: {str(e)}")
-
+    
 def load_and_filter_data(national_id: int, config_path: str) -> pd.DataFrame:
-    """Load and filter data for specific national ID"""
+    """Load and filter data for specific national ID - SIMPLER APPROACH"""
     try:
+        print(f"🔧 Starting data load for ID: {national_id}, config: {config_path}")
+        
         config = load_config(config_path)
         base_path = Path(config["path"])
         files = config["files"]
         join_order = config["join_order"]
+        
+        # Get the filter column from config
+        filter_column = config.get("filter_column", "PersonNationalID")
+        print(f"🔑 Using filter column: {filter_column}")
 
         # Load all CSV files
         dfs = {}
@@ -339,6 +435,7 @@ def load_and_filter_data(national_id: int, config_path: str) -> pd.DataFrame:
                 raise FileNotFoundError(f"Data file not found: {file_path}")
             
             dfs[file_name] = pd.read_csv(file_path)
+            print(f"✅ Loaded {file_name}: {dfs[file_name].shape}")
 
         # Start with first file
         result_df = dfs[join_order[0]].copy()
@@ -368,24 +465,32 @@ def load_and_filter_data(national_id: int, config_path: str) -> pd.DataFrame:
                     right_on=join_key_in
                 )
 
-        # Find primary key from first file
-        first_file = next(f for f in files if f["name"] == join_order[0])
-        primary_key = first_file.get("primary_key", "PersonNationalID")
+        print(f"📋 Final columns: {result_df.columns.tolist()}")
         
-        # Filter by national ID
-        if primary_key not in result_df.columns:
-            raise ValueError(f"Primary key '{primary_key}' not found in data")
+        # ✅ SIMPLER FIX: Just find the qualified filter column name
+        if filter_column not in result_df.columns:
+            # Look for the column from the first file (it will be filter_column or filter_column_firstfilename)
+            first_file_columns = [col for col in result_df.columns if col.startswith(filter_column)]
+            if first_file_columns:
+                actual_filter_column = first_file_columns[0]  # Use the first match
+                print(f"🔍 Using qualified column: {actual_filter_column}")
+            else:
+                raise ValueError(f"Filter column '{filter_column}' not found in data. Available: {result_df.columns.tolist()}")
+        else:
+            actual_filter_column = filter_column
         
-        target_df = result_df[result_df[primary_key] == national_id]
+        print(f"🔍 Filtering for {actual_filter_column} = {national_id}")
+        target_df = result_df[result_df[actual_filter_column] == national_id]
         
         if target_df.empty:
             raise HTTPException(status_code=404, detail=f"No data found for ID {national_id}")
         
+        print(f"✅ Filter result: {target_df.shape} rows found")
         return target_df
         
     except Exception as e:
+        print(f"❌ Error in load_and_filter_data: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Data loading error: {str(e)}")
-
 
 def call_ollama(prompt: str, task_type: str = "default", temperature: float = None) -> str:
     """Smart model selection based on task type"""
@@ -535,8 +640,8 @@ def load_authentication_prompts():
         print(f"❌ Error loading prompts: {e}")
         return AUTHENTICATION_PROMPTS
 
+"""
 def generate_authentication_questions(data_str: str, target_id: int, prompt_type: str) -> List[QAPair]:
-    """Generate authentication questions using Ollama"""
     try:
         print(f"🔍 Generating {prompt_type} questions for ID: {target_id}")
         
@@ -551,12 +656,14 @@ def generate_authentication_questions(data_str: str, target_id: int, prompt_type
         prompt_template = prompts[prompt_type]
         print(f"✅ Loaded prompt template for {prompt_type}")
         
+        # Format the prompt with actual values
         prompt = prompt_template.format(target_id=target_id, data_str=data_str)
         print(f"✅ Formatted prompt, length: {len(prompt)}")
         
-        # Call Ollama
+        # Call Ollama with appropriate temperature (lower for more factual responses)
+        temperature = 0.1  # Lower temperature for more consistent, factual responses
         print("🔄 Calling Ollama API...")
-        result = call_ollama(prompt, task_type="chat", temperature=0.3)  # Lower temperature for more consistent JSON
+        result = call_ollama(prompt, task_type="chat", temperature=temperature)
         print(f"✅ Ollama response received, length: {len(result)}")
         print(f"📝 Raw response preview: {result[:200]}...")
         
@@ -575,19 +682,42 @@ def generate_authentication_questions(data_str: str, target_id: int, prompt_type
                 qa_pairs = []
                 for item in parsed_response:
                     if isinstance(item, dict) and "question" in item and "answer" in item:
+                        question = item["question"]
+                        answer = item["answer"]
+                        
+                        # ✅ Minimal cleaning - only fix obviously generic questions
+                        if any(generic in question.lower() for generic in [
+                            "knowledge question", "behavioral question", 
+                            "multi-factor question", "security question",
+                            "question 1", "question 2", "question 3"
+                        ]):
+                            # Create a better question based on the answer content
+                            if any(word in answer.lower() for word in ['payment', 'balance', 'amount', 'transaction']):
+                                question = "Can you tell me about your recent account activity?"
+                            elif any(word in answer.lower() for word in ['industry', 'work', 'employment']):
+                                question = "What does our records show about your employment?"
+                            elif any(word in answer.lower() for word in ['date', 'opened', 'created']):
+                                question = "When was your account first opened?"
+                            else:
+                                question = "Can you verify some details from your account information?"
+                        
                         qa_pairs.append(QAPair(
-                            question=item["question"],
-                            answer=item["answer"]
+                            question=question,
+                            answer=answer
                         ))
                 
                 print(f"✅ Extracted {len(qa_pairs)} valid Q&A pairs")
                 
                 # Ensure we have exactly 3 pairs
                 if len(qa_pairs) < 3:
-                    print(f"⚠️  Only got {len(qa_pairs)} pairs, adding fallback questions")
-                    # Use more relevant fallback questions based on the data
-                    fallback_questions = create_fallback_questions(data_str, len(qa_pairs))
+                    print(f"⚠️  Only got {len(qa_pairs)} pairs, adding data-driven questions")
+                    fallback_questions = create_data_driven_questions(data_str, prompt_type)
                     qa_pairs = qa_pairs + fallback_questions
+                
+                # Log the final questions for debugging
+                for i, qa in enumerate(qa_pairs[:3], 1):
+                    print(f"   {i}. Q: {qa.question}")
+                    print(f"      A: {qa.answer}")
                 
                 return qa_pairs[:3]
                 
@@ -595,15 +725,268 @@ def generate_authentication_questions(data_str: str, target_id: int, prompt_type
                 print(f"❌ JSON parsing failed even after extraction: {e}")
                 print(f"📝 Extracted JSON text: {json_text}")
         
-        # If JSON extraction fails, create meaningful Q&A pairs from the raw response
-        print("⚠️  Using enhanced fallback Q&A generation")
-        return create_enhanced_fallback_questions(result, data_str)
+        # If JSON extraction fails, create meaningful Q&A pairs from the data
+        print("⚠️  Using data-driven fallback Q&A generation")
+        return create_data_driven_questions(data_str, prompt_type)
             
     except Exception as e:
         print(f"❌ Error in generate_authentication_questions: {str(e)}")
         import traceback
         traceback.print_exc()
+        return create_data_driven_questions(data_str, prompt_type)
+
+
+   
+"""
+
+def generate_authentication_questions(data_str: str, target_id: int, prompt_type: str) -> tuple[List[QAPair], bool, Optional[QueryLog]]:
+    """Generate authentication questions using Ollama - returns (questions, llm_success, query_log)"""
+    llm_success = True
+    query_log = None
+    
+    try:
+        print(f"🔍 Generating {prompt_type} questions for ID: {target_id}")
+        
+        # Load prompts dynamically
+        prompts = load_authentication_prompts()
+        
+        if prompt_type not in prompts:
+            error_msg = f"Unknown prompt type: {prompt_type}. Available types: {list(prompts.keys())}"
+            print(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
+        prompt_template = prompts[prompt_type]
+        print(f"✅ Loaded prompt template for {prompt_type}")
+        
+        # Format the prompt with actual values
+        full_prompt = prompt_template.format(target_id=target_id, data_str=data_str)
+        print(f"✅ Formatted prompt, length: {len(full_prompt)}")
+        
+        # Call Ollama with appropriate temperature
+        temperature = 0.1
+        model = OLLAMA_MODELS["chat"]
+        print("🔄 Calling Ollama API...")
+        result = call_ollama(full_prompt, task_type="chat", temperature=temperature)
+        print(f"✅ Ollama response received, length: {len(result)}")
+        
+        # Create query log
+        query_log = QueryLog(
+            prompt_type=prompt_type,
+            target_id=target_id,
+            prompt_used=full_prompt[:1000] + "..." if len(full_prompt) > 1000 else full_prompt,  # Truncate if too long
+            llm_response=result[:1000] + "..." if len(result) > 1000 else result,  # Truncate if too long
+            llm_model=model,
+            success=True,
+            timestamp=datetime.now().isoformat()
+        )
+        
+        print(f"📝 Raw response preview: {result[:200]}...")
+        
+        # Try to extract JSON from the response
+        json_text = extract_json_from_response(result)
+        
+        if json_text:
+            try:
+                # Validate JSON structure before parsing
+                if not all(key in json_text for key in ['"question"', '"answer"']):
+                    raise json.JSONDecodeError("Missing required fields", json_text, 0)
+                
+                parsed_response = json.loads(json_text)
+                print("✅ Successfully parsed JSON response")
+                
+                # Handle both single object and array responses
+                if isinstance(parsed_response, dict):
+                    parsed_response = [parsed_response]
+                
+                qa_pairs = []
+                valid_count = 0
+                
+                for item in parsed_response:
+                    if isinstance(item, dict) and "question" in item and "answer" in item:
+                        question = item["question"]
+                        answer = item["answer"]
+                        
+                        # Validate that both question and answer have content
+                        if question.strip() and answer.strip():
+                            # Minimal cleaning for obviously generic questions
+                            if any(generic in question.lower() for generic in [
+                                "knowledge question", "behavioral question", 
+                                "multi-factor question", "security question",
+                                "question 1", "question 2", "question 3"
+                            ]):
+                                # Create better question based on the answer content
+                                if any(word in answer.lower() for word in ['payment', 'balance', 'amount', 'transaction']):
+                                    question = "Can you tell me about your recent account activity?"
+                                elif any(word in answer.lower() for word in ['industry', 'work', 'employment']):
+                                    question = "What does our records show about your employment?"
+                                elif any(word in answer.lower() for word in ['date', 'opened', 'created']):
+                                    question = "When was your account first opened?"
+                                else:
+                                    question = "Can you verify some details from your account information?"
+                            
+                            qa_pairs.append(QAPair(
+                                question=question,
+                                answer=answer
+                            ))
+                            valid_count += 1
+                
+                print(f"✅ Extracted {valid_count} valid Q&A pairs from LLM")
+                
+                # If we got at least 2 valid pairs from LLM, use them
+                if valid_count >= 2:
+                    # Ensure we have exactly 3 pairs
+                    if len(qa_pairs) < 3:
+                        print(f"⚠️  LLM generated {len(qa_pairs)} pairs, adding data-driven questions")
+                        fallback_questions = create_data_driven_questions(data_str, prompt_type)
+                        qa_pairs = qa_pairs + fallback_questions
+                        llm_success = False  # Mark as partial failure
+                    
+                    # Log the final questions for debugging
+                    for i, qa in enumerate(qa_pairs[:3], 1):
+                        print(f"   {i}. Q: {qa.question}")
+                        print(f"      A: {qa.answer}")
+                    
+                    return qa_pairs[:3], llm_success, query_log
+                else:
+                    print(f"❌ LLM generated only {valid_count} valid pairs, using fallback")
+                    llm_success = False
+                
+            except json.JSONDecodeError as e:
+                print(f"❌ JSON parsing failed: {e}")
+                print(f"📝 Extracted JSON text: {json_text}")
+                llm_success = False
+                # Update query log to reflect failure
+                if query_log:
+                    query_log.success = False
+        else:
+            print("❌ No valid JSON found in LLM response")
+            llm_success = False
+            # Update query log to reflect failure
+            if query_log:
+                query_log.success = False
+        
+        # If we reach here, LLM generation failed
+        print("⚠️  Using data-driven fallback Q&A generation")
+        fallback_questions = create_data_driven_questions(data_str, prompt_type)
+        
+        return fallback_questions[:3], llm_success, query_log
+            
+    except Exception as e:
+        print(f"❌ Error in generate_authentication_questions: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        llm_success = False
+        
+        # Create error query log
+        query_log = QueryLog(
+            prompt_type=prompt_type,
+            target_id=target_id,
+            prompt_used=full_prompt[:1000] + "..." if 'full_prompt' in locals() and len(full_prompt) > 1000 else full_prompt if 'full_prompt' in locals() else "Prompt not generated",
+            llm_response=f"Error: {str(e)}",
+            llm_model=OLLAMA_MODELS["chat"],
+            success=False,
+            timestamp=datetime.now().isoformat()
+        )
+        
+        return create_data_driven_questions(data_str, prompt_type), llm_success, query_log
+
+def create_data_driven_questions(data_str: str, prompt_type: str) -> List[QAPair]:
+    """Create questions based on actual data content when LLM fails"""
+    try:
+        # Parse the CSV data to extract meaningful information
+        lines = data_str.strip().split('\n')
+        if len(lines) < 2:
+            return create_error_fallback_questions()
+        
+        headers = [h.strip() for h in lines[0].split(',')]
+        data_row = [v.strip() for v in lines[1].split(',')]  # First data row
+        
+        # Create a mapping of header to value
+        data_dict = dict(zip(headers, data_row))
+        
+        questions = []
+        
+        if prompt_type == "knowledge":
+            # Create knowledge questions based on available data fields
+            if 'lastpaymentdate' in data_dict and data_dict['lastpaymentdate'] and data_dict['lastpaymentdate'].lower() not in ['', 'null', 'nan']:
+                questions.append(QAPair(
+                    question="When was your last payment made according to our records?",
+                    answer=f"Your last payment was made on {data_dict['lastpaymentdate']}"
+                ))
+            
+            if 'currentbalanceamt' in data_dict and data_dict['currentbalanceamt'] and data_dict['currentbalanceamt'].lower() not in ['', 'null', 'nan']:
+                questions.append(QAPair(
+                    question="What's the current balance showing on your account?",
+                    answer=f"Your current balance is {data_dict['currentbalanceamt']}"
+                ))
+            
+            if 'industry' in data_dict and data_dict['industry'] and data_dict['industry'].lower() not in ['', 'null', 'nan']:
+                questions.append(QAPair(
+                    question="Which industry sector are you employed in based on our records?",
+                    answer=f"You work in the {data_dict['industry']} industry"
+                ))
+            
+            if 'subscribername' in data_dict and data_dict['subscribername'] and data_dict['subscribername'].lower() not in ['', 'null', 'nan']:
+                questions.append(QAPair(
+                    question="Which company or service provider is your account registered with?",
+                    answer=f"Your account is with {data_dict['subscribername']}"
+                ))
+            
+            # Fill remaining slots if needed
+            while len(questions) < 3:
+                if 'accountopeneddate' in data_dict and data_dict['accountopeneddate'] and data_dict['accountopeneddate'].lower() not in ['', 'null', 'nan']:
+                    questions.append(QAPair(
+                        question="When did you first open this account with us?",
+                        answer=f"Your account was opened on {data_dict['accountopeneddate']}"
+                    ))
+                elif 'status1' in data_dict and data_dict['status1'] and data_dict['status1'].lower() not in ['', 'null', 'nan']:
+                    questions.append(QAPair(
+                        question="What's the current status of your account?",
+                        answer=f"Your account status is {data_dict['status1']}"
+                    ))
+                else:
+                    questions.append(QAPair(
+                        question="Can you verify your account details with us?",
+                        answer="Based on your account records, specific verification information is available"
+                    ))
+        
+        elif prompt_type == "behavioral":
+            # Create behavioral questions
+            if 'lastpaymentdate' in data_dict and data_dict['lastpaymentdate']:
+                questions.append(QAPair(
+                    question="Based on your payment history, when do you typically make your payments?",
+                    answer=f"Your payment patterns show activity around {data_dict['lastpaymentdate']}"
+                ))
+            
+            if any(field in data_dict for field in ['currentbalanceamt', 'openingbalanceamt', 'balanceoverdueamt']):
+                questions.append(QAPair(
+                    question="How would you describe your typical account balance management?",
+                    answer="Your account shows specific balance patterns that help verify your identity"
+                ))
+            
+            # Fill remaining slots
+            while len(questions) < 3:
+                questions.append(QAPair(
+                    question="Can you describe your usual transaction patterns?",
+                    answer="Your transaction history shows identifiable behavioral patterns"
+                ))
+        
+        else:
+            # For other prompt types, use generic but appropriate questions
+            while len(questions) < 3:
+                questions.append(QAPair(
+                    question="Can you verify your identity with some account details?",
+                    answer="Your account information contains specific verification data"
+                ))
+        
+        return questions[:3]
+            
+    except Exception as e:
+        print(f"❌ Error creating data-driven questions: {e}")
         return create_error_fallback_questions()
+
+
+
 
 def extract_json_from_response(text: str) -> str:
     """Extract JSON from LLM response that might contain explanations"""
@@ -984,8 +1367,7 @@ async def reset_prompt(prompt_type: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error resetting prompt: {str(e)}")
     
-# --- Authentication Endpoints ---
-# --- Authentication Endpoints ---
+# --- Authentication Endpoints with Query Logging ---
 @app.get("/auth/behavioral/personal/{national_id}", response_model=ReportResponse)
 async def behavioral_auth_personal(national_id: int):
     try:
@@ -996,10 +1378,16 @@ async def behavioral_auth_personal(national_id: int):
         data_str = target_df.to_csv(index=False, header=True)
         print(f"✅ Data converted to CSV, length: {len(data_str)}")
         
-        qa_pairs = generate_authentication_questions(data_str, national_id, "behavioral")
+        qa_pairs, llm_success, query_log = generate_authentication_questions(data_str, national_id, "behavioral")
         print(f"✅ Generated {len(qa_pairs)} Q&A pairs")
         
-        return ReportResponse(report_id=national_id, llm_model=OLLAMA_MODELS["chat"], results=qa_pairs)
+        return ReportResponse(
+            report_id=national_id, 
+            llm_model=OLLAMA_MODELS["chat"], 
+            results=qa_pairs,
+            llm_generation_success=llm_success,
+            query_log=query_log
+        )
     except Exception as e:
         print(f"❌ Error in behavioral_auth_personal: {str(e)}")
         import traceback
@@ -1016,38 +1404,74 @@ async def knowledge_auth_personal(national_id: int):
         data_str = target_df.to_csv(index=False, header=True)
         print(f"✅ Data converted to CSV, length: {len(data_str)}")
         
-        qa_pairs = generate_authentication_questions(data_str, national_id, "knowledge")
+        qa_pairs, llm_success, query_log = generate_authentication_questions(data_str, national_id, "knowledge")
         print(f"✅ Generated {len(qa_pairs)} Q&A pairs")
         
-        return ReportResponse(report_id=national_id, llm_model=OLLAMA_MODELS["chat"], results=qa_pairs)
+        return ReportResponse(
+            report_id=national_id, 
+            llm_model=OLLAMA_MODELS["chat"], 
+            results=qa_pairs,
+            llm_generation_success=llm_success,
+            query_log=query_log
+        )
     except Exception as e:
         print(f"❌ Error in knowledge_auth_personal: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-# ... similar logging for other auth endpoints
-
-
 @app.get("/auth/multifactor/personal/{national_id}", response_model=ReportResponse)
 async def multifactor_auth_personal(national_id: int):
     try:
+        print(f"🔍 Starting multifactor auth for ID: {national_id}")
         target_df = load_and_filter_data(national_id, "config_personal.json")
+        print(f"✅ Data loaded successfully, shape: {target_df.shape}")
+        
         data_str = target_df.to_csv(index=False, header=True)
-        qa_pairs = generate_authentication_questions(data_str, national_id, "multifactor")
-        return ReportResponse(report_id=national_id, llm_model=OLLAMA_MODELS["chat"], results=qa_pairs)
+        print(f"✅ Data converted to CSV, length: {len(data_str)}")
+        
+        qa_pairs, llm_success, query_log = generate_authentication_questions(data_str, national_id, "multifactor")
+        print(f"✅ Generated {len(qa_pairs)} Q&A pairs")
+        
+        return ReportResponse(
+            report_id=national_id, 
+            llm_model=OLLAMA_MODELS["chat"], 
+            results=qa_pairs,
+            llm_generation_success=llm_success,
+            query_log=query_log
+        )
     except Exception as e:
+        print(f"❌ Error in multifactor_auth_personal: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/auth/security/personal/{national_id}", response_model=ReportResponse)
 async def security_auth_personal(national_id: int):
     try:
+        print(f"🔍 Starting security auth for ID: {national_id}")
         target_df = load_and_filter_data(national_id, "config_personal.json")
+        print(f"✅ Data loaded successfully, shape: {target_df.shape}")
+        
         data_str = target_df.to_csv(index=False, header=True)
-        qa_pairs = generate_authentication_questions(data_str, national_id, "security")
-        return ReportResponse(report_id=national_id, llm_model=OLLAMA_MODELS["chat"], results=qa_pairs)
+        print(f"✅ Data converted to CSV, length: {len(data_str)}")
+        
+        qa_pairs, llm_success, query_log = generate_authentication_questions(data_str, national_id, "security")
+        print(f"✅ Generated {len(qa_pairs)} Q&A pairs")
+        
+        return ReportResponse(
+            report_id=national_id, 
+            llm_model=OLLAMA_MODELS["chat"], 
+            results=qa_pairs,
+            llm_generation_success=llm_success,
+            query_log=query_log
+        )
     except Exception as e:
+        print(f"❌ Error in security_auth_personal: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 # --- Admin Endpoints (Keep original functionality) ---
 @app.get("/admin/files", response_model=List[FileInfo])
 async def list_csv_files(base_path: str):
@@ -2240,7 +2664,7 @@ def get_ai_copilot_ui():
     const joinOrderDropzone = document.getElementById('harmonizerJoinOrderDropzone');
     joinOrderDropzone.innerHTML = '';
     
-    // Populate filter column dropdown with columns from the first file
+    // ✅ Populate filter column dropdown with columns from the first file
     const firstFile = selectedFiles.find(file => file.name === harmonizerJoinOrder[0]);
     let firstFileColumns = Array.isArray(firstFile.columns) ? firstFile.columns : firstFile.columns.split(",").map(col => col.trim());
     const filterColumnSelect = document.getElementById('harmonizerFilterColumn');
@@ -2323,93 +2747,125 @@ def get_ai_copilot_ui():
     document.getElementById('harmonizerResults').classList.add('hidden');
 }
 
-            function dropFileForHarmonizer(event) {
-                event.preventDefault();
-                event.target.classList.remove('dragover');
-                const fileName = event.dataTransfer.getData('text/plain');
-                const index = harmonizerJoinOrder.indexOf(fileName);
-                if (index !== -1) {
-                    harmonizerJoinOrder.splice(index, 1);
-                }
-                const dropzone = document.getElementById('harmonizerJoinOrderDropzone');
-                const draggedElement = document.getElementById(`harmonizer_drag_${fileName}`);
-                dropzone.appendChild(draggedElement);
-                const items = Array.from(dropzone.children).map(item => item.innerText);
-                harmonizerJoinOrder = items;
-            }
+           function dropFileForHarmonizer(event) {
+    event.preventDefault();
+    event.target.classList.remove('dragover');
+    const fileName = event.dataTransfer.getData('text/plain');
+    const index = harmonizerJoinOrder.indexOf(fileName);
+    if (index !== -1) {
+        harmonizerJoinOrder.splice(index, 1);
+    }
+    const dropzone = document.getElementById('harmonizerJoinOrderDropzone');
+    const draggedElement = document.getElementById(`harmonizer_drag_${fileName}`);
+    dropzone.appendChild(draggedElement);
+    const items = Array.from(dropzone.children).map(item => item.innerText);
+    harmonizerJoinOrder = items;
+
+    // ✅ Update filter column dropdown when join order changes
+    const firstFile = harmonizerFiles.find(file => file.name === harmonizerJoinOrder[0]);
+    if (firstFile) {
+        let firstFileColumns = Array.isArray(firstFile.columns) ? firstFile.columns : firstFile.columns.split(",").map(col => col.trim());
+        const filterColumnSelect = document.getElementById('harmonizerFilterColumn');
+        filterColumnSelect.innerHTML = '<option value="">Select a column</option>' +
+            firstFileColumns.map(col => `<option value="${col}">${col}</option>`).join('');
+    }
+}
 
             async function analyzeAndHarmonizeSchema() {
-                const basePath = document.getElementById('harmonizerBasePath').value;
-                const targetSystem = document.getElementById('harmonizerTargetSystem').value;
-                const outputPath = document.getElementById('harmonizerOutputPath').value;
-                const mappingRequirements = document.getElementById('harmonizerMappingRequirements').value;
-                
-                if (!basePath || harmonizerJoinOrder.length === 0) {
-                    showStatus('harmonizerStatus', 'Please configure file relationships first.', 'error');
-                    return;
-                }
+    const basePath = document.getElementById('harmonizerBasePath').value;
+    const targetSystem = document.getElementById('harmonizerTargetSystem').value;
+    const outputPath = document.getElementById('harmonizerOutputPath').value;
+    const mappingRequirements = document.getElementById('harmonizerMappingRequirements').value;
+    const filterColumn = document.getElementById('harmonizerFilterColumn').value; // Get filter column
+    
+    if (!basePath || harmonizerJoinOrder.length === 0 || !filterColumn) {
+        showStatus('harmonizerStatus', 'Please configure file relationships and select a filter column first.', 'error');
+        return;
+    }
 
-                // Build files configuration
-                const files = [];
-                document.querySelectorAll('#harmonizerFileList .bg-gray-50').forEach((_, index) => {
-                    const fileName = harmonizerJoinOrder[index];
-                    const fileInfo = {
-                        name: fileName,
-                        path: harmonizerFiles.find(f => f.name === fileName).path
-                    };
-                    
-                    const primaryKey = document.getElementById(`harmonizer_primaryKey_${index}`).value;
-                    const joinKeyIn = document.getElementById(`harmonizer_joinKeyIn_${index}`).value;
-                    const joinKeyOut = document.getElementById(`harmonizer_joinKeyOut_${index}`).value;
-                    
-                    if (primaryKey) fileInfo.primary_key = primaryKey;
-                    if (joinKeyIn) fileInfo.join_key_in = joinKeyIn;
-                    if (joinKeyOut) fileInfo.join_key_out = joinKeyOut;
-                    
-                    files.push(fileInfo);
-                });
+    // Build files configuration
+    const files = [];
+    document.querySelectorAll('#harmonizerFileList .bg-gray-50').forEach((_, index) => {
+        const fileName = harmonizerJoinOrder[index];
+        const fileInfo = {
+            name: fileName,
+            path: harmonizerFiles.find(f => f.name === fileName).path
+        };
+        
+        const primaryKey = document.getElementById(`harmonizer_primaryKey_${index}`).value;
+        const joinKeyIn = document.getElementById(`harmonizer_joinKeyIn_${index}`).value;
+        const joinKeyOut = document.getElementById(`harmonizer_joinKeyOut_${index}`).value;
+        
+        if (primaryKey) fileInfo.primary_key = primaryKey;
+        if (joinKeyIn) fileInfo.join_key_in = joinKeyIn;
+        if (joinKeyOut) fileInfo.join_key_out = joinKeyOut;
+        
+        files.push(fileInfo);
+    });
 
-                const config = {
-                    path: basePath,
-                    files: files,
-                    join_order: harmonizerJoinOrder
-                };
+    const config = {
+        path: basePath,
+        files: files,
+        join_order: harmonizerJoinOrder,
+        filter_column: filterColumn  // Include filter_column in config
+    };
 
-                setLoading('harmonizerBtn', true);
-                
-                try {
-                    const response = await fetch(ENDPOINTS.HARMONIZE_SCHEMAS, {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({
-                            config: config,
-                            target_system: targetSystem,
-                            mapping_requirements: mappingRequirements,
-                            output_config_path: outputPath
-                        })
-                    });
+    setLoading('harmonizerBtn', true);
+    
+    try {
+        // ✅ FIRST: Save the configuration using save-config endpoint
+        const saveResponse = await fetch('/admin/save-config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                base_path: basePath,
+                files: files,
+                join_order: harmonizerJoinOrder,
+                output_config_path: outputPath,
+                filter_column: filterColumn
+            })
+        });
 
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        const outputEl = document.getElementById('harmonizerOutput');
-                        outputEl.textContent = data.harmonization_plan;
-                        document.getElementById('harmonizerResults').classList.remove('hidden');
-                        let successMsg = `Schema harmonized successfully using ${data.model}!`;
-                        if (data.config_saved) {
-                            successMsg += ` Configuration saved to ${outputPath}`;
-                        }
-                        showStatus('harmonizerStatus', successMsg);
-                    } else {
-                        showStatus('harmonizerStatus', `Error: ${data.detail || 'Unknown error'}`, 'error');
-                    }
-                } catch (error) {
-                    showStatus('harmonizerStatus', `Network error: ${error.message}`, 'error');
-                } finally {
-                    setLoading('harmonizerBtn', false);
-                }
+        if (!saveResponse.ok) {
+            const errorText = await saveResponse.text();
+            throw new Error(`Failed to save config: ${errorText}`);
+        }
+
+        const saveResult = await saveResponse.json();
+        console.log('✅ Config saved:', saveResult);
+
+        // ✅ SECOND: Now call the schema harmonization endpoint
+        const response = await fetch(ENDPOINTS.HARMONIZE_SCHEMAS, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                config: config,
+                target_system: targetSystem,
+                mapping_requirements: mappingRequirements,
+                output_config_path: outputPath
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+            const outputEl = document.getElementById('harmonizerOutput');
+            outputEl.textContent = data.harmonization_plan;
+            document.getElementById('harmonizerResults').classList.remove('hidden');
+            let successMsg = `Schema harmonized successfully using ${data.model}!`;
+            if (data.config_saved) {
+                successMsg += ` Configuration saved to ${outputPath}`;
             }
-
+            showStatus('harmonizerStatus', successMsg);
+        } else {
+            showStatus('harmonizerStatus', `Error: ${data.detail || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        showStatus('harmonizerStatus', `Error: ${error.message}`, 'error');
+    } finally {
+        setLoading('harmonizerBtn', false);
+    }
+}
             // Toggle S3 fields based on operation type
             function toggleS3Fields() {
                 const operation = document.getElementById('s3Operation').value;
